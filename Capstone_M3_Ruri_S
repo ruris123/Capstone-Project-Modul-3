@@ -1,0 +1,461 @@
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import category_encoders as ce
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.preprocessing import StandardScaler, PolynomialFeatures, MinMaxScaler, RobustScaler
+from sklearn.impute import SimpleImputer
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+
+from sklearn.model_selection import cross_val_score, GridSearchCV, RandomizedSearchCV, train_test_split, StratifiedKFold
+from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import plot_roc_curve, plot_precision_recall_curve, confusion_matrix, recall_score, fbeta_score, make_scorer
+
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import AdaBoostClassifier
+from sklearn.ensemble import GradientBoostingClassifier
+from xgboost.sklearn import XGBClassifier
+from sklearn.tree import DecisionTreeClassifier, plot_tree
+
+from imblearn.over_sampling import RandomOverSampler, SMOTE
+from imblearn.under_sampling import RandomUnderSampler, NearMiss
+from imblearn.pipeline import Pipeline
+
+import warnings
+warnings.filterwarnings('ignore')
+## LATAR BELAKANG
+Salah satu bank mempunyai sebuah produk deposito berjangka yang bisa di tawarkan kepada konsumen sebagai produk investasi.
+Dari bank tersebut ada sebuah data yang menunjukan beberapa kolom yang berkaitan dengan penawaran produk deposito berjangka.
+Dalam data tersebut kita kan mencari apakah sebuah fitur atau kolom data tersebut berpengaruh terhadap penjualan produk deposito berjangka yang di punyai bank tersebut.
+
+
+
+
+## LOAD DATA
+df=pd.read_csv('data_bank_marketing_campaign.csv')
+display(df.head(),df.tail())
+### INFORMASI ATRIBUT
+| Atribute | Data Type | Description|
+| --- | --- | --- |
+| Age | Numeric | Umur |
+| Job | Kategorikal | Tipe Pekerjaan |
+| Balance | Numeric | Saldo yang ada |
+| Housing | Kategorikal | Memiliki pinjaman perumahan |
+| Loan | Kategorikal | Memiliki pinjaman pribadi |
+| Contact | Kategorikal | Tipe komunikasi yang digunakan |
+| Month | Kategorikal | komunikasi terakhir berdasarkan bulan |
+| Campaign | Numeric | Jumlah Penawaran yang dilakukan |
+| Pdays | Numeric | Jumlah hari setelah terakhir menghubungi |
+| Poutcome | Kategorikal | Hasil dari penawaran yang dilakukan |
+| Deposit | Kategorikal | Apakah sudah berlanggan deposito berjangka atau belum |
+# Melihat jumlah baris, kolom dan tipe data tiap kolom
+df.info()
+# Melihat penjelasan dari data numerikal
+df.describe()
+# # Melihat penjelasan dari data kategorikal
+df.describe(include=['O'])
+# Melihat apakah ada data yg kosong
+df.isna().sum()
+# Melihat data unik dan jumlah nya di tiap kolom
+pd.set_option('display.max_colwidth', -1)
+listItem = []
+for col in df.columns :
+    listItem.append( [col, df[col].nunique(), df[col].unique()])
+
+tabel1Desc = pd.DataFrame(columns=['Column Name', 'Number of Unique', 'Unique Sample'],
+                     data=listItem)
+tabel1Desc
+# Pada kolom 'poutcome' nilai 'unknown' di masukan pada nilai 'other' agar mudah dimengerti 
+df['poutcome'] = df['poutcome'].replace('unknown', 'other', regex=True)
+df['poutcome'].unique()
+# Cek data duplikat
+df[df.duplicated(keep=False)].sort_values(['age','job','balance','housing','loan','contact','month','campaign','pdays','poutcome','deposit'])
+# Jumlah Baris dan kolom sebelum menghapus duplikat
+df.shape
+# Menghapus data Duplikat
+df = df.drop_duplicates()
+df.shape
+## DATA ANALISIS
+### SIMPLE EDA
+# Categorical Feature
+cat_features = [feature for feature in df.columns if ((df[feature].dtypes == 'O') & (feature not in ['deposit']))]
+cat_features
+plt.figure(figsize=(15, 15), facecolor='white')
+plotnumber = 1
+
+for feature in cat_features:
+   
+    ax = plt.subplot(4, 2, plotnumber)
+    
+    sns.countplot(hue = 'deposit', x = feature, data = df)
+    
+    plt.ylabel('Churn')
+    plt.xlabel(feature)
+    plt.xticks(rotation=45)
+    plt.title(feature, fontsize=16)
+    plt.tight_layout();
+    
+    plotnumber += 1
+Kesimpulan :
+- beberapa tipe pekerjaan seperti : admin, self-employed, servised, housemaid, technician, blue-collar, entrepreneur, serta unknown lebih banyak memilih untuk tidak berlangganan deposito. Terlebih untuk pekerjaan blue-collar yang terlihat berbeda signifikan di banding pekerjaan yang lain.
+- dan utnuk tipe pekerjaan seperti : management, student, retired, dan unemployed lebih banyak memilih untuk berlangganan deposito. Terlebih untuk tipe pekerjaan retired yang terlihat lebih banyak di banding pekerjaan lain.
+- Untuk yang memiliki pinjaman untuk perumahan terlihat perbandingan nya hampir sama dengan yang tidak meiliki pinjaman perumahan untuk berlangganan deposito.
+- Untuk yang tidak memiliki pinjaman pribadi lebih banyak untuk berlanganan deposito dibanding yang mempunyai pinjaman pribadi
+- Untuk yang mempunyai kontak telepon selular lebih berkesempatan dan memang lebih banyak yang berlangganan deposito
+- Pada bulan mei terlihat cukup signifikan yang berlanggana deposito
+- Dari data di atas terlihat yang tidak berlangganan lebih banyak di banding dengan yang berlangganan, dan itu lebih banyak di other
+# Numerical Feature
+num_features = [feature for feature in df.columns if (df[feature].dtypes != 'O')]
+num_features
+# boxplot
+plt.figure(figsize=(15, 12), facecolor='white')
+plotnumber = 1
+    
+for feature in num_features[:-1]:
+    ax = plt.subplot(6,2, plotnumber)
+    sns.boxplot(x=feature, data=df);
+    plt.title(feature, fontsize=16)
+    plt.tight_layout()
+    plotnumber += 1
+Kesimpulan :
+- Untuk pesebaran umur paling banyak ada di anata 30 sampai 50 tahun, dan yang paling tua ada sampai usia di atas 90 tahun.
+- Pada kolom 'balance' adata data yang minus artinya data ini masih memiliki tunggakan, kredit atau tagihan lain yang belum dibayar. dan untuk saldo yang paling besar ada di sekitar 60 ribu.
+- Untuk penawaran yang dilakukan paling banyak di bawah 10 kali dan ada data yang penawaran nya sampai 6o kali lebuh
+mask = np.zeros_like(df.corr()) 
+mask[np.triu_indices_from(mask)]=True 
+
+plt.figure(figsize=(12, 8))
+plt.title('Korelasi Heatmap Untuk Deposito Berjangka', size=16)
+sns.heatmap(df.corr(), cmap='coolwarm', annot=True, mask=mask, vmax=1);
+Kesimpulan :
+- Dari tabel di atas dapat di lihat bahwa campaign atau penawaran yang dilakukan berpengaruh atau sangat berkorelasi, sedangkan age dan pdays tidak.
+df
+df['deposit'].replace(['no','yes'],[0,1],inplace=True)
+df
+## Data splitting
+X = df.drop(['deposit'], axis=1)
+y = df['deposit']
+# Split
+X_train, X_test, y_train, y_test = train_test_split(
+    X, 
+    y,
+    stratify=y,
+    test_size=0.2,
+    random_state=0
+)
+## Data preprocessing
+# Transformer scheme
+transformer = ColumnTransformer([
+    ('onehot', OneHotEncoder(sparse=False, drop='first'), ['job','housing','loan','contact','month','poutcome'])
+], remainder='passthrough')
+smote = SMOTE(random_state=0)
+rus = RandomUnderSampler(random_state=0)
+ros = RandomOverSampler(random_state=0)
+## Model benchmark
+# DecsionTree
+tree = DecisionTreeClassifier(random_state=0)
+
+# RandomForest
+rf = RandomForestClassifier(random_state=0)
+
+# Adaboost
+ada = AdaBoostClassifier(tree, random_state=0)
+
+# Gradientboost
+gbc = GradientBoostingClassifier(random_state=0)
+
+# ExtremeGradientBoost
+xgbc = XGBClassifier(random_state=0, verbosity=0)
+# Define imbalanced treatment method
+models = [tree, rf, ada, gbc, xgbc]
+score = []
+nilai_mean = []
+nilai_std = []
+
+
+
+for i in models:
+
+    skfold = StratifiedKFold(n_splits=5)
+    estimator = Pipeline([
+        ('transformer', transformer),
+        ('scaler', RobustScaler()),
+        ('balancing', smote),
+        ('model', i)
+    ])
+
+    model_cv = cross_val_score(
+        estimator, 
+        X_train, 
+        y_train, 
+        cv=skfold, 
+        scoring='f1', 
+        error_score='raise'
+        )
+
+    print(model_cv, i)
+
+    score.append(model_cv)
+    nilai_mean.append(model_cv.mean())
+    nilai_std.append(model_cv.std())
+pd.DataFrame({
+    'model':['tree', 'rf',' ada', 'gbc', 'xgbc'],
+    'mean':nilai_mean,
+    'std':nilai_std
+})
+Model RandomForest dan GradientBoost dipilih menjadi 2 model paling optimal karena memiliki nilai recall rata-rata paling tinggi.
+## Hyperparameter Tuning
+### Random Forest
+# kedalaman pohon
+max_depth = list(np.arange(1,10))
+
+
+# jumlah pohon
+n_estimators = list(np.arange(50,500))
+
+
+
+# jumlah feature yang digunakan untuk pertimbangan splitting (% dari total kolom train set)
+max_features = list(np.arange(1,10))
+
+# Hyperparameter space
+hyperparam_space = {
+    'balancing':[smote, rus, ros, None],
+    'model__max_depth':max_depth , 
+
+    'model__n_estimators':n_estimators,
+   
+    'model__max_features':max_features
+}
+# Stratified cross validation
+skf = StratifiedKFold(n_splits = 5)
+
+# Benchmark model 1
+rf = RandomForestClassifier(random_state=0)
+
+
+# Create the algorithm chains
+estimator_rf = Pipeline([
+    ('tansformer', transformer),
+    ('scaler', RobustScaler()),
+    ('balancing', smote), 
+    ('model', rf)
+    ])
+
+# Hyperparameter tuning
+random_rf = RandomizedSearchCV(
+    estimator_rf, 
+    param_distributions = hyperparam_space, 
+    cv = skf, 
+    scoring = 'f1', 
+    n_jobs = -1, 
+    random_state=0,
+    n_iter=100
+)
+random_rf.fit(X_train, y_train)
+pd.DataFrame(random_rf.cv_results_).sort_values(by='rank_test_score').head()
+print('RF')
+print('Best_score:', random_rf.best_score_)
+print('Best_params:', random_rf.best_params_)
+
+### Gradient Boost
+# kedalaman pohon
+max_depth = list(np.arange(1,10))
+
+# learning rate
+learning_rate = list(np.arange(1,100)/100)
+
+# jumlah pohon
+n_estimators = list(np.arange(50,500))
+
+# jumlah baris train set tiap pohon (% dari total baris train set)
+subsample = list(np.arange(2,10)/10)
+
+# jumlah feature yang digunakan untuk pertimbangan splitting (% dari total kolom train set)
+max_features = list(np.arange(1,10))
+
+# Hyperparameter space GBC
+hyperparam_space_gbc = {
+    'balancing':[smote, rus, ros, None],
+    'model__max_depth':max_depth , 
+    'model__learning_rate':learning_rate,
+    'model__n_estimators':n_estimators,
+    'model__subsample':subsample,
+    'model__max_features':max_features
+}
+# Stratified cross validation
+skf = StratifiedKFold(n_splits = 5)
+
+# Benchmark model 1
+gbc = GradientBoostingClassifier(random_state=0)
+
+# Create the algorithm chains
+estimator_gbc = Pipeline([
+    ('tansformer', transformer),
+    ('scaler', RobustScaler()),
+    ('balancing', smote), 
+    ('model', gbc)
+    ])
+
+# Hyperparameter tuning
+random_gbc = RandomizedSearchCV(
+    estimator_gbc, 
+    param_distributions = hyperparam_space_gbc, 
+    cv = skf, 
+    scoring = 'f1', 
+    n_jobs = -1, 
+    random_state=0,
+    n_iter=30
+)
+random_gbc.fit(X_train, y_train)
+pd.DataFrame(random_gbc.cv_results_).sort_values(by='rank_test_score').head()
+print('GBC')
+print('Best_score:', random_gbc.best_score_)
+print('Best_params:', random_gbc.best_params_)
+## Performance in Test Set
+
+### Before Hyperparameter Tuning
+models={
+    'RandomForest' : RandomForestClassifier(random_state=0),
+    'GradientBoosting': GradientBoostingClassifier(random_state=0),
+}
+
+score=[]
+
+for i in models:
+
+    model = Pipeline([
+        ('transformer', transformer),
+        ('balancing', smote),
+        ('model', models[i])
+    ])
+
+    # fitting
+    model.fit(X_train, y_train)
+
+    # predict
+    y_pred = model.predict(X_test)
+
+    # recall score
+    score.append([fbeta_score(y_test, y_pred, beta=2)])
+
+score_before_tuning = pd.DataFrame(score, columns=['F1'], index = models.keys())
+score_before_tuning
+### After Hyperparameter Tuning
+# best model
+rf_tuning = random_rf.best_estimator_
+
+# fitting
+rf_tuning.fit(X_train, y_train)
+
+# predict
+y_pred_rf_tuning = rf_tuning.predict(X_test)
+
+# recall score
+f1_rf_tuning = fbeta_score(y_test, y_pred_rf_tuning, beta=2)
+f1_rf_tuning
+# best model
+gbc_tuning = random_gbc.best_estimator_
+
+# fitting
+gbc_tuning.fit(X_train, y_train)
+
+# predict
+y_pred_gbc_tuning = gbc_tuning.predict(X_test)
+
+# recall score
+f1_gbc_tuning = fbeta_score(y_test, y_pred_gbc_tuning, beta=2)
+f1_gbc_tuning
+score_list = [f1_rf_tuning, f1_gbc_tuning]
+
+models = ['RandomForest','GradientBoosting']
+
+score_after_tuning = pd.DataFrame({
+    'Model': models,
+    'F1': score_list
+})
+
+score_after_tuning
+## Comparison (Test Set)
+score_before_tuning
+score_after_tuning
+print('RandomForestClassifier')
+print(classification_report(y_test, y_pred_rf_tuning))
+print('GradientBoostingClassifier')
+print(classification_report(y_test, y_pred_gbc_tuning))
+# RandomForest after tuning
+f, ax = plt.subplots(figsize=(8, 5))
+sns.heatmap(confusion_matrix(y_test, y_pred_rf_tuning), annot=True, fmt='.0f', ax=ax)
+plt.xlabel('y Prediksi')
+plt.ylabel('y Aktual')
+plt.title('RandomForest after tuning');
+# GradientBoost after tuning
+f, ax = plt.subplots(figsize=(8, 5))
+sns.heatmap(confusion_matrix(y_test, y_pred_gbc_tuning), annot=True, fmt='.0f', ax=ax)
+plt.xlabel('y Prediksi')
+plt.ylabel('y Aktual')
+plt.title('GradientBoosting after tuning');
+print(score_before_tuning.iloc[0])
+print(score_after_tuning.iloc[0])
+print(score_before_tuning.iloc[1])
+print(score_after_tuning.iloc[1])
+## Kesimpulan 
+---
+Random Forest
+
+   - Train Set:
+      - Before tuning: 0.67
+      - After tuning: 0.68
+
+   - Test Set:
+      - Before tuning: 0.65
+      - After tuning: 0.63
+
+---
+Gradient Boost
+
+   - Train Set:
+      - Before tuning: 0.68
+      - After tuning: 0.68
+
+   - Test Set:
+      - Before tuning: 0.63
+      - After tuning: 0.63
+
+---
+
+Hyperparameter tuning berhasil meningkatkan F1 pada test set dari model dengan Random Forest sebesar 0.01. Berbeda denga  Gradient Boost yang stabil pada train set dan tes set.
+## Feature Importance
+rf_tuning
+rf_tuning['model'].feature_importances_
+feat_cat = list(transformer.transformers_[0][1].get_feature_names_out())
+feat_num =list(X_train.columns[transformer.transformers_[1][2]])
+
+feat = feat_cat + feat_num
+imp = pd.DataFrame({
+    'feature':feat,
+    'importance':rf_tuning['model'].feature_importances_
+}).sort_values('importance', ascending=False)
+
+imp
+sns.barplot(data=imp, y='feature', x='importance', color='b');
+## Kesimpulan :
+- 'poutcome' menjadi fitur terpenting pada data di atas yang berpengaruh terhadap di terimanya penawaran yang dilakukan agar membeli produk deposito berjangka.
+- Penawaran yang dilakukan mungkin menggunakan metode offline atau secara tatap muka menawarkan kepada konsumen, dengan cara membuka stand di pusat keramaian untuk menawarkan prodak deposito berjangka tersebut. Itu terlihat dengan posisi 'contact yang berada di bawah 'poutcome'
+- Disusul dengan fitur 'contact' dan 'balance' di posisi berikutnya, yang memang 'contact penting untuk sebuah bank menawarkan sebuah produk deposito berjangka kepada konsumen. Serta 'balance' yang memang di butuhkan untuk bisa menggunakan sebuah produk deposito berjangka yang ada di sebuah bank
+
+## Rekomendasi :
+Untuk mendapatkan kosumen membeli produk deposito berjangka memang bisa dilakukan dengan berbagai cara baik itu secara online via telp atau offline dengan menawarkan secara langsung kepada konsumen. Tetapi berdasarkan data di atas dapat dilihat bahwa pertubuhan konsumen untuk produk deposito berjangka dapat di capai dengan metode offline. Untuk itu perusahaan sebaiknya membuat sebuah stand atau titik seorang sales untuk bisa menawarkan produknya sehingga kosumen bisa lebih mengetahui produk tersebut dengan bertanya langsung dengan seorang sales tersebut.
+## Save Model : Pickle
+# Save Model
+import pickle
+
+# best model
+rftuning = random_rf.best_estimator_
+
+rf_tuning.fit(X, y)
+
+pickle.dump(rf_tuning, open('Model_RandomForest.sav', 'wb'))
